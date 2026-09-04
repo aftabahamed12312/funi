@@ -208,6 +208,23 @@ button {
   margin-bottom: 12px;
 }
 
+.metric-card strong {
+  display: block;
+  color: #7dd3fc;
+  font-size: 2rem;
+  line-height: 1;
+  margin: 8px 0;
+}
+
+.role-panel {
+  margin-bottom: 24px;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.role-panel h2 {
+  margin-bottom: 8px;
+}
+
 .card ul {
   list-style: none;
   display: grid;

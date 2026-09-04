@@ -388,19 +388,22 @@ class OnlineClassPlatform:
             return "Your admin has not granted access to this class."
         if student.role == "student" and live_class.course_id and live_class.course_id not in student.course_ids:
             return "Enroll in this class subject before joining."
+        instructor = self.users.get(live_class.instructor_id)
+        if student.role == "student" and (not instructor or instructor.user_id not in live_class.attendees):
+            return "The instructor must join the classroom before students can enter."
         if student_id not in live_class.attendees:
             live_class.attendees.append(student_id)
         student.online = True
         return f"{student.name} joined live class '{live_class.title}' on {live_class.provider}. Meeting link: {live_class.join_url}"
 
     def is_tenant_admin(self, user: Optional[User]) -> bool:
-        return bool(user and user.role in ["tenant_admin", "superadmin"])
+        return bool(user and user.role in ["admin", "tenant_admin", "superadmin"])
 
     def can_manage_user(self, admin: User, target: User) -> bool:
-        return self.is_tenant_admin(admin) and (admin.role == "superadmin" or admin.tenant_id == target.tenant_id)
+        return self.is_tenant_admin(admin) and (admin.role in {"admin", "superadmin"} or admin.tenant_id == target.tenant_id)
 
     def can_manage_class(self, admin: User, live_class: LiveClass) -> bool:
-        return self.is_tenant_admin(admin) and (admin.role == "superadmin" or admin.tenant_id == live_class.tenant_id)
+        return self.is_tenant_admin(admin) and (admin.role in {"admin", "superadmin"} or admin.tenant_id == live_class.tenant_id)
 
     def student_dashboard(self, user: User) -> Dict[str, Any]:
         enrolled = [self.courses[course_id].title for course_id in user.course_ids]
@@ -431,6 +434,7 @@ class OnlineClassPlatform:
 platform = OnlineClassPlatform()
 
 super_admin = SuperAdmin(name="Software Engineer", email="superadmin@company.com", password="admin123")
+super_admin.user.role = "admin"
 platform.add_superadmin(super_admin)
 
 # Seed tenant and users
@@ -440,7 +444,7 @@ skill = platform.create_tenant("SkillForge Institute", "training_institute", "Go
 super_admin.define_tenant_workflow(bright, {"student_registration": True, "teacher_upload": True, "live_class": True, "quizzes": True, "attendance": True, "video_conference": "Zoom"})
 super_admin.define_tenant_workflow(skill, {"student_registration": True, "demo_classes": True, "mentor_support": True, "video_conference": "Google Meet", "payment": True})
 
-admin_user = platform.register_user("admin-01", "Priya Admin", "admin@brightfuture.com", "admin123", "tenant_admin", bright.tenant_id)
+admin_user = platform.register_user("admin-01", "Priya Admin", "admin@brightfuture.com", "admin123", "admin", bright.tenant_id)
 instructor_user = platform.register_user("inst-01", "Ramesh Teacher", "ramesh@brightfuture.com", "teacher123", "instructor", bright.tenant_id)
 student_user = platform.register_user("stu-01", "Aarav Student", "aarav@student.com", "student123", "student", bright.tenant_id)
 student_user.phone = "+9779800000000"
@@ -623,8 +627,8 @@ def api_schedule_live_session():
     if not user:
         payload, status = api_response(message="Authentication required.", success=False, status=401)
         return payload, status
-    if user.role not in {"instructor", "tenant_admin", "superadmin"}:
-        payload, status = api_response(message="Only instructors or administrators can schedule sessions.", success=False, status=403)
+    if user.role not in {"admin", "tenant_admin", "superadmin"}:
+        payload, status = api_response(message="Only administrators can schedule sessions.", success=False, status=403)
         return payload, status
     course = platform.courses.get(body.get("course_id"))
     scheduled_start = parse_iso_datetime(body.get("scheduled_start_time"))
@@ -632,14 +636,16 @@ def api_schedule_live_session():
     if not course or not scheduled_start or not isinstance(duration, int) or duration < 1:
         payload, status = api_response(message="course_id, scheduled_start_time, and a positive duration are required.", success=False, status=400)
         return payload, status
-    if user.role == "instructor" and course.tenant_id not in {None, user.tenant_id}:
-        payload, status = api_response(message="You cannot schedule a session for this course.", success=False, status=403)
+    instructor_id = body.get("instructor_id")
+    instructor = platform.users.get(instructor_id)
+    if not instructor or instructor.role != "instructor" or not instructor.approved or instructor.tenant_id != user.tenant_id:
+        payload, status = api_response(message="An approved instructor_id from your institute is required.", success=False, status=400)
         return payload, status
     session_id = f"sess_live_{secrets.token_hex(4)}"
     room_name = f"room_{course.course_id}_{secrets.token_hex(3)}"
     settings = body.get("settings") if isinstance(body.get("settings"), dict) else {}
-    live_sessions[session_id] = {"session_id": session_id, "room_name": room_name, "course_id": course.course_id, "instructor_id": user.user_id, "title": body.get("title", "Live class"), "scheduled_start_time": scheduled_start.isoformat().replace("+00:00", "Z"), "estimated_duration_minutes": duration, "settings": settings, "status": "SCHEDULED", "attendees": set()}
-    platform.add_live_class(session_id, live_sessions[session_id]["title"], user.tenant_id or "tenant-1", user.user_id, live_sessions[session_id]["scheduled_start_time"], "SFU WebRTC", url_for("meeting", room_id=session_id, _external=True), course.course_id)
+    live_sessions[session_id] = {"session_id": session_id, "room_name": room_name, "course_id": course.course_id, "instructor_id": instructor.user_id, "title": body.get("title", "Live class"), "scheduled_start_time": scheduled_start.isoformat().replace("+00:00", "Z"), "estimated_duration_minutes": duration, "settings": settings, "status": "SCHEDULED", "attendees": set()}
+    platform.add_live_class(session_id, live_sessions[session_id]["title"], user.tenant_id or "tenant-1", instructor.user_id, live_sessions[session_id]["scheduled_start_time"], "SFU WebRTC", url_for("meeting", room_id=session_id, _external=True), course.course_id)
     payload, status = api_response(data={"session_id": session_id, "room_name": room_name, "scheduled_start_time": live_sessions[session_id]["scheduled_start_time"], "status": "SCHEDULED"}, status=201)
     return payload, status
 
@@ -660,12 +666,14 @@ def api_join_live_session(session_id):
     if user.user_id != live_session["instructor_id"] and live_session["course_id"] not in user.course_ids:
         payload, status = api_response(message="Enroll in the course before joining this session.", success=False, status=403)
         return payload, status
+    classroom = platform.live_classes.get(session_id)
+    instructor = platform.users.get(live_session["instructor_id"])
+    if user.role == "student" and (not classroom or not instructor or instructor.user_id not in classroom.attendees):
+        payload, status = api_response(message="The instructor must join before students can enter.", success=False, status=409)
+        return payload, status
     room_token = secrets.token_urlsafe(32)
     room_tokens[room_token] = {"user_id": user.user_id, "session_id": session_id, "expires_at": datetime.now(timezone.utc) + timedelta(hours=2)}
     live_session["attendees"].add(user.user_id)
-    classroom = platform.live_classes.get(session_id)
-    if classroom and user.user_id != live_session["instructor_id"] and user.user_id not in classroom.allowed_students:
-        classroom.allowed_students.append(user.user_id)
     payload, status = api_response(data={"session_id": session_id, "connection_type": "sfu_webrtc", "sfu_ws_url": os.getenv("GURUKUL_SFU_WS_URL", "wss://sfu.localhost"), "room_token": room_token, "user_role": "publisher" if user.user_id == live_session["instructor_id"] else "subscriber"})
     return payload, status
 
@@ -697,7 +705,7 @@ def dashboard():
     dashboard_data = get_dashboard_data(user)
     tenant = platform.get_tenant(user.tenant_id)
     course_list = [course for course in platform.courses.values() if course.tenant_id in [None, user.tenant_id]]
-    live_list = [live for live in platform.live_classes.values() if live.tenant_id == user.tenant_id and (user.role != "student" or user.user_id in live.allowed_students)]
+    live_list = [live for live in platform.live_classes.values() if live.tenant_id == user.tenant_id and (user.role in {"admin", "tenant_admin", "superadmin"} or (user.role == "instructor" and live.instructor_id == user.user_id) or (user.role == "student" and user.user_id in live.allowed_students))]
     instructor_dashboard = platform.instructor_dashboard(user) if user.role == "instructor" else None
     assessments = [
         {"course": course, "attempts": [attempt for attempt in platform.attempts.values() if attempt.user_id == user.user_id and attempt.course_id == course.course_id]}
@@ -705,6 +713,8 @@ def dashboard():
     ]
     managed_users = [candidate for candidate in platform.users.values() if candidate.tenant_id == user.tenant_id and candidate.user_id != user.user_id] if platform.is_tenant_admin(user) else []
     managed_classes = [live for live in platform.live_classes.values() if platform.can_manage_class(user, live)] if platform.is_tenant_admin(user) else []
+    student_count = sum(1 for candidate in managed_users if candidate.role == "student")
+    instructor_count = sum(1 for candidate in managed_users if candidate.role == "instructor")
     return render_template(
         "dashboard.html",
         user=user,
@@ -716,6 +726,8 @@ def dashboard():
         managed_users=managed_users,
         managed_classes=managed_classes,
         assessments=assessments,
+        student_count=student_count,
+        instructor_count=instructor_count,
         message=request.args.get("message", ""),
     )
 
@@ -803,7 +815,7 @@ def admin_create_class():
     instructor_id = request.form.get("instructor_id")
     course_id = request.form.get("course_id")
     instructor = platform.users.get(instructor_id)
-    if not instructor or instructor.role != "instructor" or instructor.tenant_id != admin.tenant_id or course_id not in platform.courses:
+    if not instructor or instructor.role != "instructor" or not instructor.approved or instructor.tenant_id != admin.tenant_id or course_id not in platform.courses:
         return redirect(url_for("dashboard", message="Choose an approved instructor from your institute."))
     class_id = request.form.get("class_id", "").strip() or f"class-{len(platform.live_classes) + 101}"
     live = platform.add_live_class(class_id, request.form.get("title", "Live Class"), admin.tenant_id, instructor_id, request.form.get("scheduled_at", ""), "Gurukul Classroom", url_for("meeting", room_id=class_id, _external=True), course_id)
@@ -868,10 +880,12 @@ def join_class():
         return redirect(url_for("index"))
     class_id = request.form.get("class_id")
     live_class = platform.live_classes.get(class_id)
-    if not live_class or (user.role == "student" and (user.user_id not in live_class.allowed_students or (live_class.course_id and live_class.course_id not in user.course_ids))):
+    if not live_class or (user.role == "instructor" and live_class.instructor_id != user.user_id) or (user.role == "student" and (user.user_id not in live_class.allowed_students or (live_class.course_id and live_class.course_id not in user.course_ids))):
         return redirect(url_for("dashboard", message="You do not have access to this scheduled class."))
     if class_id:
-        platform.join_live_class(user.user_id, class_id)
+        join_message = platform.join_live_class(user.user_id, class_id)
+        if join_message.startswith("The instructor must"):
+            return redirect(url_for("dashboard", message=join_message))
     room_id = class_id or "room-default"
     return redirect(url_for("meeting", room_id=room_id))
 
@@ -883,7 +897,7 @@ def meeting(room_id):
     if not user:
         return redirect(url_for("index"))
     live_class = platform.live_classes.get(room_id)
-    if not live_class or (user.role == "student" and (user.user_id not in live_class.allowed_students or (live_class.course_id and live_class.course_id not in user.course_ids))):
+    if not live_class or (user.role == "instructor" and live_class.instructor_id != user.user_id) or (user.role == "student" and (user.user_id not in live_class.allowed_students or (live_class.course_id and live_class.course_id not in user.course_ids))):
         return redirect(url_for("dashboard", message="This classroom is not assigned to your account."))
     return render_template(
         "meeting.html",
@@ -903,6 +917,9 @@ def livekit_token_bridge(session_id):
         return {"success": False, "message": "Live session not found."}, 404
     if user.role == "student" and (user.user_id not in live_class.allowed_students or (live_class.course_id and live_class.course_id not in user.course_ids)):
         return {"success": False, "message": "You do not have access to this live session."}, 403
+    instructor = platform.users.get(live_class.instructor_id)
+    if user.role == "student" and (not instructor or instructor.user_id not in live_class.attendees):
+        return {"success": False, "message": "The instructor must join before students can enter."}, 409
     if not service_url:
         return {"success": False, "message": "LiveKit service is not configured."}, 503
     payload = json.dumps({
@@ -973,10 +990,7 @@ def handle_disconnect():
             username = members.pop(request.sid)
             if room_hosts.get(room_id) == request.sid:
                 room_hosts.pop(room_id, None)
-                host = next(iter(members), None)
-                if host:
-                    room_hosts[room_id] = next(iter(members))
-                    emit("room_host", {"hostId": room_hosts[room_id], "hostName": members[room_hosts[room_id]]["username"]}, room=room_id)
+                emit("room_host", {"hostId": None, "hostName": None}, room=room_id)
             emit("system_message", {"text": f"{username['username']} left the room."}, room=room_id)
             emit("user-left", {"userId": request.sid}, room=room_id)
             emit("room_users", {"users": members}, room=room_id)

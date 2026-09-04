@@ -10,7 +10,7 @@
   <div class="dashboard-shell">
     <aside class="sidebar">
       <h2>Gurukul Next</h2>
-      <p class="role-badge">{{ user.role }}</p>
+      <p class="role-badge">{{ 'Admin' if user.role in ['admin', 'tenant_admin', 'superadmin'] else user.role.title() }}</p>
       <nav>
         <a href="{{ url_for('dashboard') }}">Overview</a>
         <a href="#courses">Courses</a>
@@ -50,6 +50,24 @@
           <h3>Workflow</h3>
           <p>{{ tenant.workflow }}</p>
         </div>
+        {% if user.role in ['admin', 'tenant_admin', 'superadmin'] %}
+        <div class="card metric-card"><h3>Students</h3><strong>{{ student_count }}</strong><small>Managed learners</small></div>
+        <div class="card metric-card"><h3>Instructors</h3><strong>{{ instructor_count }}</strong><small>Teaching staff</small></div>
+        {% endif %}
+      </section>
+      {% endif %}
+
+      {% if user.role == 'instructor' %}
+      <section class="card role-panel">
+        <p class="eyebrow">Instructor workspace</p>
+        <h2>Host your assigned classrooms</h2>
+        <p>Classes are scheduled and access is managed by the admin. Start a class first so enrolled students can join your live stream.</p>
+      </section>
+      {% elif user.role == 'student' %}
+      <section class="card role-panel">
+        <p class="eyebrow">Student workspace</p>
+        <h2>Learn with your instructor</h2>
+        <p>Join an assigned live class after the instructor opens the room.</p>
       </section>
       {% endif %}
 
@@ -107,33 +125,23 @@
         </div>
       </section>
 
-      {% if instructor_dashboard and false %}
+      {% if instructor_dashboard %}
       <section class="card">
-        <h3>Instructor Live Session Creator</h3>
-        <form method="POST" action="{{ url_for('create_class') }}" class="instructor-form">
-          <input type="text" name="title" placeholder="Session title" required />
-          <input type="datetime-local" name="scheduled_at" required />
-          <select name="provider">
-            <option value="Zoom">Zoom</option>
-            <option value="Google Meet">Google Meet</option>
-          </select>
-          <button type="submit">Create Live Class</button>
-        </form>
-
+        <h3>Assigned classrooms</h3>
         <div class="instructor-hosted">
-          <h4>Hosted sessions</h4>
           {% for cls in instructor_dashboard.hosted_classes %}
           <div class="hosted-item">
             <strong>{{ cls.title }}</strong>
             <span>{{ cls.scheduled_at }}</span>
-            <a href="{{ cls.join_url }}" target="_blank">Open meeting</a>
+            <form method="POST" action="{{ url_for('join_class') }}"><input type="hidden" name="class_id" value="{{ cls.class_id }}" /><button type="submit">Start class</button></form>
           </div>
+          {% else %}<p>No classrooms assigned by the admin yet.</p>
           {% endfor %}
         </div>
       </section>
       {% endif %}
 
-      {% if user.role in ['tenant_admin', 'superadmin'] %}
+      {% if user.role in ['admin', 'tenant_admin', 'superadmin'] %}
       <section class="card" id="admin-controls">
         <h3>Institute Owner Controls</h3>
         <p>Create institute accounts, approve them, build courses, schedule classrooms, and control student access.</p>
@@ -215,7 +223,7 @@
       </section>
       {% endif %}
 
-      <section class="card">
+      {% if user.role == 'student' %}<section class="card">
         <h3>Student Dashboard</h3>
         <div class="student-info">
           <p><strong>Name:</strong> {{ dashboard.name }}</p>
@@ -224,6 +232,7 @@
           <p><strong>Live Classes:</strong> {{ dashboard.live_classes|join(', ') if dashboard.live_classes else 'No live classes joined' }}</p>
         </div>
       </section>
+      {% endif %}
     </main>
   </div>
 </body>
