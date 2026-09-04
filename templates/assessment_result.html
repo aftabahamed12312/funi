@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment Result | Gurukul Next</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <main class="container assessment-page">
+    <a href="{{ url_for('dashboard') }}">Back to dashboard</a>
+    <p class="eyebrow">Assessment complete</p>
+    <h1>{{ course.title }}</h1>
+    <section class="summary-grid result-grid">
+      <div class="card"><strong>{{ attempt.score }}%</strong><small>Score</small></div>
+      <div class="card"><strong>{{ attempt.percentile }}%</strong><small>Percentile</small></div>
+      <div class="card"><strong>{{ attempt.time_taken }} sec</strong><small>Time taken</small></div>
+    </section>
+    <section class="card">
+      <h2>Topics to revisit</h2>
+      <p>{{ attempt.weakness_tags|join(', ') if attempt.weakness_tags else 'No weak topics detected. Excellent work.' }}</p>
+    </section>
+    <section class="card result-review">
+      <h2>Answer review</h2>
+      <ul>
+        {% for question in course.quiz_bank %}
+        <li><strong>{{ loop.index }}. {{ question.prompt }}</strong><small>Your answer: {{ attempt.responses.get(loop.index0|string, 'Not answered') }} | Correct: {{ question.answer }}</small></li>
+        {% endfor %}
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

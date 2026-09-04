@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | Gurukul Next</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="dashboard-shell">
+    <aside class="sidebar">
+      <h2>Gurukul Next</h2>
+      <p class="role-badge">{{ user.role }}</p>
+      <nav>
+        <a href="{{ url_for('dashboard') }}">Overview</a>
+        <a href="#courses">Courses</a>
+        <a href="#classes">Live Classes</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+      </nav>
+    </aside>
+
+    <main class="main-panel">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Welcome back</p>
+          <h1>{{ user.name }}</h1>
+        </div>
+        <div class="status-box">
+          <span>Status:</span>
+          <strong>{{ dashboard.status }}</strong>
+        </div>
+      </header>
+
+      {% if message %}
+      <div class="card" style="border-color:#38bdf8; color:#dbeafe;">{{ message }}</div>
+      {% endif %}
+
+      {% if tenant %}
+      <section class="summary-grid">
+        <div class="card">
+          <h3>Tenant</h3>
+          <p>{{ tenant.company_name }}</p>
+          <small>{{ tenant.tenant_type }}</small>
+        </div>
+        <div class="card">
+          <h3>Video Platform</h3>
+          <p>{{ tenant.meeting_provider }}</p>
+        </div>
+        <div class="card">
+          <h3>Workflow</h3>
+          <p>{{ tenant.workflow }}</p>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="content-grid">
+        <div class="card" id="courses">
+          <h3>Courses</h3>
+          <ul>
+            {% for course in courses %}
+            <li>
+              <div>
+                <strong>{{ course.title }}</strong>
+                <small>{{ course.category }} · {{ course.level }}</small>
+              </div>
+              <form method="POST" action="{{ url_for('enroll') }}">
+                <input type="hidden" name="course_id" value="{{ course.course_id }}" />
+                <button type="submit">Enroll</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="card" id="assessments">
+          <h3>Practice assessments</h3>
+          <ul>
+            {% for item in assessments %}
+            <li>
+              <div><strong>{{ item.course.title }}</strong><small>{{ item.course.quiz_bank|length }} objective questions</small></div>
+              <a href="{{ url_for('assessment', course_id=item.course.course_id) }}">Start quiz</a>
+            </li>
+            {% else %}
+            <li>Enroll in a course with a quiz to start practicing.</li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        <div class="card" id="classes">
+          <h3>Live Classes</h3>
+          <ul>
+            {% for live in live_classes %}
+            <li>
+              <div>
+                <strong>{{ live.title }}</strong>
+                <small>Subject: {{ courses|selectattr('course_id', 'equalto', live.course_id)|map(attribute='title')|first if live.course_id else 'General classroom' }}</small>
+                <small>{{ live.scheduled_at }} · {{ live.provider }}</small>
+                <small><a href="{{ live.join_url }}" target="_blank">Open meeting</a></small>
+              </div>
+              <form method="POST" action="{{ url_for('join_class') }}">
+                <input type="hidden" name="class_id" value="{{ live.class_id }}" />
+                <button type="submit">Join</button>
+              </form>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+
+      {% if instructor_dashboard and false %}
+      <section class="card">
+        <h3>Instructor Live Session Creator</h3>
+        <form method="POST" action="{{ url_for('create_class') }}" class="instructor-form">
+          <input type="text" name="title" placeholder="Session title" required />
+          <input type="datetime-local" name="scheduled_at" required />
+          <select name="provider">
+            <option value="Zoom">Zoom</option>
+            <option value="Google Meet">Google Meet</option>
+          </select>
+          <button type="submit">Create Live Class</button>
+        </form>
+
+        <div class="instructor-hosted">
+          <h4>Hosted sessions</h4>
+          {% for cls in instructor_dashboard.hosted_classes %}
+          <div class="hosted-item">
+            <strong>{{ cls.title }}</strong>
+            <span>{{ cls.scheduled_at }}</span>
+            <a href="{{ cls.join_url }}" target="_blank">Open meeting</a>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      {% if user.role in ['tenant_admin', 'superadmin'] %}
+      <section class="card" id="admin-controls">
+        <h3>Institute Owner Controls</h3>
+        <p>Create institute accounts, approve them, build courses, schedule classrooms, and control student access.</p>
+
+        <h4>Create Student or Instructor Account</h4>
+        <form method="POST" action="{{ url_for('admin_create_user') }}" class="instructor-form">
+          <input type="text" name="name" placeholder="Full name" required />
+          <input type="email" name="email" placeholder="Login email" required />
+          <input type="password" name="password" placeholder="Temporary password" required />
+          <select name="role">
+            <option value="student">Student</option>
+            <option value="instructor">Instructor</option>
+          </select>
+          <button type="submit">Create Account</button>
+        </form>
+
+        <h4>Users and Approval</h4>
+        <ul>
+          {% for managed in managed_users %}
+          <li>
+            <div><strong>{{ managed.name }}</strong><small>{{ managed.role }} · {{ managed.email }} · {{ 'Approved' if managed.approved else 'Pending approval' }}</small></div>
+            {% if not managed.approved %}
+            <form method="POST" action="{{ url_for('admin_approve_user') }}">
+              <input type="hidden" name="user_id" value="{{ managed.user_id }}" />
+              <button type="submit">Approve</button>
+            </form>
+            {% endif %}
+          </li>
+          {% else %}
+          <li>No managed users yet.</li>
+          {% endfor %}
+        </ul>
+
+        <h4>Create Course</h4>
+        <form method="POST" action="{{ url_for('admin_create_course') }}" class="instructor-form">
+          <input type="text" name="title" placeholder="Course title" required />
+          <input type="text" name="category" placeholder="Category" required />
+          <input type="text" name="level" placeholder="Level" required />
+          <input type="text" name="price" placeholder="Price" required />
+          <input type="text" name="description" placeholder="Description" required />
+          <button type="submit">Create Course</button>
+        </form>
+
+        <h4>Schedule Instructor Classroom</h4>
+        <form method="POST" action="{{ url_for('admin_create_class') }}" class="instructor-form">
+          <input type="text" name="title" placeholder="Class title" required />
+          <input type="datetime-local" name="scheduled_at" required />
+          <select name="course_id" required>
+            <option value="">Choose subject/course</option>
+            {% for course in courses %}
+            <option value="{{ course.course_id }}">{{ course.title }}</option>
+            {% endfor %}
+          </select>
+          <select name="instructor_id" required>
+            <option value="">Choose instructor</option>
+            {% for managed in managed_users if managed.role == 'instructor' and managed.approved %}
+            <option value="{{ managed.user_id }}">{{ managed.name }}</option>
+            {% endfor %}
+          </select>
+          {% for managed in managed_users if managed.role == 'student' and managed.approved %}
+          <label><input type="checkbox" name="student_ids" value="{{ managed.user_id }}" /> {{ managed.name }}</label>
+          {% endfor %}
+          <button type="submit">Schedule Class</button>
+        </form>
+
+        <h4>Manage Class Access</h4>
+        {% for cls in managed_classes %}
+        <form method="POST" action="{{ url_for('admin_update_access') }}" class="instructor-form">
+          <input type="hidden" name="class_id" value="{{ cls.class_id }}" />
+          <strong>{{ cls.title }} · {{ cls.scheduled_at }}</strong>
+          {% for managed in managed_users if managed.role == 'student' and managed.approved %}
+          <label><input type="checkbox" name="student_ids" value="{{ managed.user_id }}" {% if managed.user_id in cls.allowed_students %}checked{% endif %} /> {{ managed.name }}</label>
+          {% endfor %}
+          <button type="submit">Save Access</button>
+        </form>
+        {% else %}
+        <p>No classes scheduled by this institute yet.</p>
+        {% endfor %}
+      </section>
+      {% endif %}
+
+      <section class="card">
+        <h3>Student Dashboard</h3>
+        <div class="student-info">
+          <p><strong>Name:</strong> {{ dashboard.name }}</p>
+          <p><strong>Role:</strong> {{ dashboard.role }}</p>
+          <p><strong>Enrolled Courses:</strong> {{ dashboard.enrolled_courses|join(', ') if dashboard.enrolled_courses else 'No courses yet' }}</p>
+          <p><strong>Live Classes:</strong> {{ dashboard.live_classes|join(', ') if dashboard.live_classes else 'No live classes joined' }}</p>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

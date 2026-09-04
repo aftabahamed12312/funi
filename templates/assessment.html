@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quiz | {{ course.title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <main class="container assessment-page">
+    <a href="{{ url_for('dashboard') }}">Back to dashboard</a>
+    <p class="eyebrow">Timed objective assessment</p>
+    <h1>{{ course.title }}</h1>
+    <p>{{ course.quiz_bank|length }} questions. Select one answer per question.</p>
+    <form method="POST" action="{{ url_for('submit_assessment', course_id=course.course_id) }}" class="assessment-form">
+      {% for question in course.quiz_bank %}
+      <fieldset class="card question-card">
+        <legend>{{ loop.index }}. {{ question.prompt }}</legend>
+        {% set question_index = loop.index0 %}
+        {% for option in question.options %}
+        <label><input type="radio" name="question_{{ question_index }}" value="{{ option }}" required /> {{ option }}</label>
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+      <input type="hidden" name="time_taken" id="timeTaken" value="0" />
+      <button type="submit">Submit assessment</button>
+    </form>
+  </main>
+  <script>
+    const startedAt = Date.now();
+    document.querySelector('.assessment-form').addEventListener('submit', () => {
+      document.getElementById('timeTaken').value = Math.round((Date.now() - startedAt) / 1000);
+    });
+  </script>
+</body>
+</html>

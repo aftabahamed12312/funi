@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gurukul Next</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Multi-tenant online learning platform</p>
+        <h1>Gurukul Next</h1>
+        <p>
+          Structured learning, expert instruction, live classes, and exam preparation for schools, institutes, and training companies.
+        </p>
+        <div class="feature-list">
+          <span>Student portals</span>
+          <span>Teacher dashboard</span>
+          <span>Live video classes</span>
+          <span>Tenant workflow</span>
+        </div>
+      </div>
+
+      <div class="login-card">
+        <h2>Login</h2>
+        {% if error %}
+          <p class="alert">{{ error }}</p>
+        {% endif %}
+        <form method="POST" action="{{ url_for('login') }}">
+          <label>Email</label>
+          <input type="email" name="email" value="aarav@student.com" required />
+
+          <label>Password</label>
+          <input type="password" name="password" value="student123" required />
+
+          <button type="submit">Access Dashboard</button>
+        </form>
+
+        <div class="demo-accounts">
+          <h3>Demo accounts</h3>
+          <ul>
+            <li><strong>Super Admin:</strong> superadmin@company.com / admin123</li>
+            <li><strong>Tenant Admin:</strong> admin@brightfuture.com / admin123</li>
+            <li><strong>Instructor:</strong> ramesh@brightfuture.com / teacher123</li>
+            <li><strong>Student:</strong> aarav@student.com / student123</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
